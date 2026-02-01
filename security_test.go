@@ -416,3 +416,236 @@ func TestSecurity_RegressionCheck(t *testing.T) {
 			results[2].Status, results[2].Error.Code)
 	}
 }
+
+// Phase 2 Security Tests
+
+// R-6: Test semaphore respects context cancellation
+func TestSecurity_SemaphoreRespectsContextCancellation(t *testing.T) {
+	// Create orchestrator with very low concurrency limit
+	orch := New(WithMaxConcurrency(1))
+
+	// Register a slow recipe that blocks
+	blockChan := make(chan struct{})
+	orch.RegisterRecipe("slow", func(ctx context.Context, payload interface{}) (interface{}, error) {
+		<-blockChan // Block until we release
+		return "ok", nil
+	})
+
+	// Create context that we'll cancel
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start first request to occupy the semaphore slot
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		batch := []SubRequest{
+			{ID: "1", TenantID: "tenant-a", Recipe: "slow"},
+		}
+		orch.ExecuteBatch(context.Background(), batch)
+	}()
+
+	// Give first request time to acquire semaphore
+	time.Sleep(50 * time.Millisecond)
+
+	// Now submit second request that should wait on semaphore
+	results := make(chan []Response, 1)
+	go func() {
+		batch := []SubRequest{
+			{ID: "2", TenantID: "tenant-b", Recipe: "slow"},
+		}
+		results <- orch.ExecuteBatch(ctx, batch)
+	}()
+
+	// Give second request time to start waiting
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel the context while second request is waiting
+	cancel()
+
+	// Get result from second request
+	result := <-results
+
+	// Verify second request got cancellation error
+	if result[0].Status != 504 {
+		t.Errorf("Status = %d, want 504 for cancelled request", result[0].Status)
+	}
+
+	if result[0].Error.Code != ErrCodeTimeout {
+		t.Errorf("Error code = %s, want %s", result[0].Error.Code, ErrCodeTimeout)
+	}
+
+	if !strings.Contains(result[0].Error.Message, "cancelled while waiting") {
+		t.Errorf("Error message = %q, want message about cancellation", result[0].Error.Message)
+	}
+
+	// Release first request and wait for completion
+	close(blockChan)
+	wg.Wait()
+}
+
+// R-7: Test RegisterRecipeStrict rejects duplicates
+func TestSecurity_RegisterRecipeStrict_RejectsDuplicates(t *testing.T) {
+	orch := New()
+
+	handler := func(ctx context.Context, payload interface{}) (interface{}, error) {
+		return "ok", nil
+	}
+
+	// First registration should succeed
+	err := orch.RegisterRecipeStrict("test", handler)
+	if err != nil {
+		t.Errorf("First registration failed: %v", err)
+	}
+
+	// Second registration should fail
+	err = orch.RegisterRecipeStrict("test", handler)
+	if err == nil {
+		t.Error("Expected error for duplicate registration, got nil")
+	}
+
+	if err != nil && !strings.Contains(err.Error(), "already registered") {
+		t.Errorf("Error message = %q, want 'already registered'", err.Error())
+	}
+}
+
+// R-7: Test RegisterRecipeStrict with empty name panics
+func TestSecurity_RegisterRecipeStrict_EmptyNamePanics(t *testing.T) {
+	orch := New()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic for empty recipe name, got none")
+		} else {
+			msg := r.(string)
+			if !strings.Contains(msg, "recipe name cannot be empty") {
+				t.Errorf("Panic message = %q, want 'recipe name cannot be empty'", msg)
+			}
+		}
+	}()
+
+	handler := func(ctx context.Context, payload interface{}) (interface{}, error) {
+		return "ok", nil
+	}
+
+	_ = orch.RegisterRecipeStrict("", handler)
+}
+
+// R-7: Test RegisterRecipeStrict with nil handler panics
+func TestSecurity_RegisterRecipeStrict_NilHandlerPanics(t *testing.T) {
+	orch := New()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic for nil handler, got none")
+		} else {
+			msg := r.(string)
+			if !strings.Contains(msg, "handler cannot be nil") {
+				t.Errorf("Panic message = %q, want 'handler cannot be nil'", msg)
+			}
+		}
+	}()
+
+	_ = orch.RegisterRecipeStrict("test", nil)
+}
+
+// R-8: Test WithTimeout panics on zero timeout
+func TestSecurity_WithTimeout_ZeroPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic for zero timeout, got none")
+		} else {
+			msg := r.(string)
+			if !strings.Contains(msg, "timeout must be positive") {
+				t.Errorf("Panic message = %q, want 'timeout must be positive'", msg)
+			}
+		}
+	}()
+
+	_ = New(WithTimeout(0))
+}
+
+// R-8: Test WithTimeout panics on negative timeout
+func TestSecurity_WithTimeout_NegativePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic for negative timeout, got none")
+		} else {
+			msg := r.(string)
+			if !strings.Contains(msg, "timeout must be positive") {
+				t.Errorf("Panic message = %q, want 'timeout must be positive'", msg)
+			}
+		}
+	}()
+
+	_ = New(WithTimeout(-1 * time.Second))
+}
+
+// R-8: Test WithMaxConcurrency panics on negative value
+func TestSecurity_WithMaxConcurrency_NegativePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic for negative max concurrency, got none")
+		} else {
+			msg := r.(string)
+			if !strings.Contains(msg, "max concurrency must be non-negative") {
+				t.Errorf("Panic message = %q, want 'max concurrency must be non-negative'", msg)
+			}
+		}
+	}()
+
+	_ = New(WithMaxConcurrency(-1))
+}
+
+// R-8: Test WithMaxBatchSize panics on negative value
+func TestSecurity_WithMaxBatchSize_NegativePanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic for negative max batch size, got none")
+		} else {
+			msg := r.(string)
+			if !strings.Contains(msg, "max batch size must be non-negative") {
+				t.Errorf("Panic message = %q, want 'max batch size must be non-negative'", msg)
+			}
+		}
+	}()
+
+	_ = New(WithMaxBatchSize(-1))
+}
+
+// Additional: Test recipe overwrite still works with normal RegisterRecipe
+func TestSecurity_RecipeOverwrite(t *testing.T) {
+	orch := New()
+
+	handler1 := func(ctx context.Context, payload interface{}) (interface{}, error) {
+		return "v1", nil
+	}
+
+	handler2 := func(ctx context.Context, payload interface{}) (interface{}, error) {
+		return "v2", nil
+	}
+
+	// Register first handler
+	orch.RegisterRecipe("test", handler1)
+
+	// Execute and verify v1
+	results := orch.ExecuteBatch(context.Background(), []SubRequest{
+		{ID: "1", TenantID: "tenant-a", Recipe: "test"},
+	})
+
+	if results[0].Data != "v1" {
+		t.Errorf("First handler returned %v, want 'v1'", results[0].Data)
+	}
+
+	// Register second handler (overwrite)
+	orch.RegisterRecipe("test", handler2)
+
+	// Execute and verify v2
+	results = orch.ExecuteBatch(context.Background(), []SubRequest{
+		{ID: "2", TenantID: "tenant-a", Recipe: "test"},
+	})
+
+	if results[0].Data != "v2" {
+		t.Errorf("Second handler returned %v, want 'v2'", results[0].Data)
+	}
+}

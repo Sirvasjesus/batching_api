@@ -8,12 +8,16 @@ type Option func(*Orchestrator)
 
 // WithTimeout sets the default timeout for recipe execution.
 // Individual recipes can override this with RecipeOption.
+// Panics if timeout is <= 0.
 //
 // Example:
 //
 //	orch := relayer.New(relayer.WithTimeout(5 * time.Second))
 func WithTimeout(timeout time.Duration) Option {
 	return func(o *Orchestrator) {
+		if timeout <= 0 {
+			panic("timeout must be positive")
+		}
 		o.timeout = timeout
 	}
 }
@@ -54,6 +58,7 @@ func WithPanicHook(hook PanicHook) Option {
 
 // WithMaxConcurrency limits the number of concurrent recipe executions.
 // Set to 0 for unlimited concurrency (default).
+// Panics if max is < 0.
 // Useful for controlling resource usage and back-pressure.
 //
 // Example:
@@ -61,12 +66,16 @@ func WithPanicHook(hook PanicHook) Option {
 //	orch := relayer.New(relayer.WithMaxConcurrency(100))
 func WithMaxConcurrency(max int) Option {
 	return func(o *Orchestrator) {
+		if max < 0 {
+			panic("max concurrency must be non-negative")
+		}
 		o.maxConcurrency = max
 	}
 }
 
 // WithMaxBatchSize limits the maximum number of requests in a batch.
 // Set to 0 for unlimited batch size (default, not recommended for production).
+// Panics if max is < 0.
 // Prevents resource exhaustion from oversized batches.
 //
 // Recommended values: 100-10000 depending on system resources.
@@ -76,6 +85,9 @@ func WithMaxConcurrency(max int) Option {
 //	orch := relayer.New(relayer.WithMaxBatchSize(1000))
 func WithMaxBatchSize(max int) Option {
 	return func(o *Orchestrator) {
+		if max < 0 {
+			panic("max batch size must be non-negative")
+		}
 		o.maxBatchSize = max
 	}
 }

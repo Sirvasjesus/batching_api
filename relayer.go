@@ -108,6 +108,42 @@ func (o *Orchestrator) RegisterRecipe(name string, handler Handler, opts ...*Rec
 	RegisterRecipe(o, name, handler, opts...)
 }
 
+// RegisterRecipeStrict registers a handler with duplicate detection.
+// Unlike RegisterRecipe which silently overwrites existing handlers,
+// this method returns an error if a recipe with the same name already exists.
+// Use this in strict initialization scenarios where duplicate registration
+// indicates a programming error.
+//
+// Example:
+//
+//	if err := orch.RegisterRecipeStrict("get-user", handler); err != nil {
+//	    log.Fatalf("duplicate recipe registration: %v", err)
+//	}
+func (o *Orchestrator) RegisterRecipeStrict(name string, handler Handler, opts ...*RecipeOption) error {
+	// Validate inputs
+	if name == "" {
+		panic("recipe name cannot be empty")
+	}
+	if handler == nil {
+		panic("recipe handler cannot be nil")
+	}
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	// Check for existing registration
+	if _, exists := o.registry[name]; exists {
+		return fmt.Errorf("recipe '%s' is already registered", name)
+	}
+
+	o.registry[name] = handler
+	if len(opts) > 0 && opts[0] != nil {
+		o.recipeOptions[name] = opts[0]
+	}
+
+	return nil
+}
+
 // ExecuteBatch processes a batch of requests concurrently.
 // Each request is executed in its own goroutine with tenant isolation.
 // Returns responses in the same order as the input batch.
@@ -161,8 +197,23 @@ func (o *Orchestrator) executeRequest(ctx context.Context, wg *sync.WaitGroup, r
 
 	// Acquire semaphore if concurrency limiting is enabled
 	if o.maxConcurrency > 0 {
-		o.semaphore <- struct{}{}
-		defer func() { <-o.semaphore }()
+		select {
+		case o.semaphore <- struct{}{}:
+			defer func() { <-o.semaphore }()
+		case <-ctx.Done():
+			// Context cancelled while waiting for execution slot
+			*result = Response{
+				ID:       req.ID,
+				Status:   504,
+				TenantID: req.TenantID,
+				Duration: time.Since(time.Now()),
+				Error: &Error{
+					Code:    ErrCodeTimeout,
+					Message: "request cancelled while waiting for execution slot",
+				},
+			}
+			return
+		}
 	}
 
 	start := time.Now()
