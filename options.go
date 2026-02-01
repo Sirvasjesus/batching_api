@@ -20,25 +20,35 @@ func WithTimeout(timeout time.Duration) Option {
 
 // WithExecutionHook sets the execution hook for lifecycle events.
 // The hook is called before and after each recipe execution.
+// If nil is provided, NoOpHook is used as a safe default.
 //
 // Example:
 //
 //	orch := relayer.New(relayer.WithExecutionHook(&MyLoggingHook{}))
 func WithExecutionHook(hook ExecutionHook) Option {
 	return func(o *Orchestrator) {
-		o.executionHook = hook
+		if hook == nil {
+			o.executionHook = &NoOpHook{}
+		} else {
+			o.executionHook = hook
+		}
 	}
 }
 
 // WithPanicHook sets the panic recovery hook.
 // The hook is called when a recipe panics during execution.
+// If nil is provided, NoOpHook is used as a safe default.
 //
 // Example:
 //
 //	orch := relayer.New(relayer.WithPanicHook(&MyAlertingHook{}))
 func WithPanicHook(hook PanicHook) Option {
 	return func(o *Orchestrator) {
-		o.panicHook = hook
+		if hook == nil {
+			o.panicHook = &NoOpHook{}
+		} else {
+			o.panicHook = hook
+		}
 	}
 }
 
@@ -52,6 +62,21 @@ func WithPanicHook(hook PanicHook) Option {
 func WithMaxConcurrency(max int) Option {
 	return func(o *Orchestrator) {
 		o.maxConcurrency = max
+	}
+}
+
+// WithMaxBatchSize limits the maximum number of requests in a batch.
+// Set to 0 for unlimited batch size (default, not recommended for production).
+// Prevents resource exhaustion from oversized batches.
+//
+// Recommended values: 100-10000 depending on system resources.
+//
+// Example:
+//
+//	orch := relayer.New(relayer.WithMaxBatchSize(1000))
+func WithMaxBatchSize(max int) Option {
+	return func(o *Orchestrator) {
+		o.maxBatchSize = max
 	}
 }
 

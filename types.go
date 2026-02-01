@@ -47,6 +47,8 @@ const (
 	ErrCodePanic           = "PANIC"             // Recipe panicked during execution
 	ErrCodeRecipeExecution = "RECIPE_EXECUTION"  // Recipe returned error
 	ErrCodeInvalidPayload  = "INVALID_PAYLOAD"   // Payload validation failed
+	ErrCodeBatchTooLarge   = "BATCH_TOO_LARGE"   // Batch size exceeds limit
+	ErrCodeInvalidRequest  = "INVALID_REQUEST"   // Request validation failed
 )
 
 // Handler is the function signature for recipe implementations.

@@ -3,10 +3,16 @@ package relayer
 import (
 	"context"
 	"fmt"
-	"runtime/debug"
 	"sync"
 	"time"
 )
+
+// panicError is a sentinel error type to distinguish panics from regular errors
+type panicError struct{}
+
+func (e *panicError) Error() string {
+	return "internal error during recipe execution"
+}
 
 // Orchestrator manages recipe registration and batch execution.
 // It provides concurrent request processing with tenant isolation,
@@ -19,6 +25,7 @@ type Orchestrator struct {
 	executionHook  ExecutionHook
 	panicHook      PanicHook
 	maxConcurrency int
+	maxBatchSize   int           // Maximum batch size (0 = unlimited)
 	semaphore      chan struct{} // For concurrency limiting
 }
 
@@ -78,6 +85,14 @@ func New(opts ...Option) *Orchestrator {
 //		Timeout: 30 * time.Second,
 //	})
 func RegisterRecipe(o *Orchestrator, name string, handler Handler, opts ...*RecipeOption) {
+	// Validate inputs
+	if name == "" {
+		panic("recipe name cannot be empty")
+	}
+	if handler == nil {
+		panic("recipe handler cannot be nil")
+	}
+
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
@@ -109,6 +124,24 @@ func (o *Orchestrator) RegisterRecipe(name string, handler Handler, opts ...*Rec
 //	results := orch.ExecuteBatch(ctx, batch)
 //	successes := relayer.FilterSuccess(results)
 func (o *Orchestrator) ExecuteBatch(ctx context.Context, batch []SubRequest) []Response {
+	// Check batch size limit
+	if o.maxBatchSize > 0 && len(batch) > o.maxBatchSize {
+		// Return error response for all requests in oversized batch
+		results := make([]Response, len(batch))
+		for i, req := range batch {
+			results[i] = Response{
+				ID:       req.ID,
+				Status:   413, // HTTP 413 Payload Too Large
+				TenantID: req.TenantID,
+				Error: &Error{
+					Code:    ErrCodeBatchTooLarge,
+					Message: fmt.Sprintf("batch size %d exceeds limit of %d", len(batch), o.maxBatchSize),
+				},
+			}
+		}
+		return results
+	}
+
 	results := make([]Response, len(batch))
 	var wg sync.WaitGroup
 
@@ -133,6 +166,21 @@ func (o *Orchestrator) executeRequest(ctx context.Context, wg *sync.WaitGroup, r
 	}
 
 	start := time.Now()
+
+	// Validate request fields
+	if req.ID == "" || req.TenantID == "" || req.Recipe == "" {
+		*result = Response{
+			ID:       req.ID,
+			Status:   400,
+			TenantID: req.TenantID,
+			Duration: time.Since(start),
+			Error: &Error{
+				Code:    ErrCodeInvalidRequest,
+				Message: "request must have non-empty ID, TenantID, and Recipe",
+			},
+		}
+		return
+	}
 
 	// Enrich context with request metadata
 	taskCtx := WithTenantID(ctx, req.TenantID)
@@ -189,8 +237,11 @@ func (o *Orchestrator) safeExecute(ctx context.Context, req SubRequest) Response
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
+				// Call panic hook with full panic value for internal logging/alerting
+				// The hook can log the panic value and stack trace internally
 				o.panicHook.OnPanic(ctx, req, r)
-				err = fmt.Errorf("panic in recipe: %v\nStack: %s", r, debug.Stack())
+				// Set sentinel error (no sensitive information in message)
+				err = &panicError{}
 			}
 		}()
 		data, err = handler(ctx, req.Payload)
@@ -210,6 +261,19 @@ func (o *Orchestrator) safeExecute(ctx context.Context, req SubRequest) Response
 
 	// Handle execution error
 	if err != nil {
+		// Check if error is from a panic
+		if _, isPanic := err.(*panicError); isPanic {
+			return Response{
+				ID:     req.ID,
+				Status: 500,
+				Error: &Error{
+					Code:    ErrCodePanic,
+					Message: err.Error(), // Generic message from panicError
+				},
+			}
+		}
+
+		// Regular recipe error
 		return Response{
 			ID:     req.ID,
 			Status: 500,
