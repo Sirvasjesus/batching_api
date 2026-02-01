@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package batch;
+
+option go_package = "github.com/voseghale/batching/examples/grpc-server;batch";
+
+// BatchService provides batch processing via gRPC
+service BatchService {
+  // ExecuteBatch processes a batch of requests
+  rpc ExecuteBatch(BatchRequest) returns (BatchResponse);
+
+  // StreamBatch processes requests with streaming response
+  rpc StreamBatch(BatchRequest) returns (stream SubResponse);
+}
+
+// BatchRequest contains multiple sub-requests to process
+message BatchRequest {
+  repeated SubRequestProto requests = 1;
+}
+
+// SubRequestProto represents a single request in a batch
+message SubRequestProto {
+  string id = 1;
+  string tenant_id = 2;
+  string recipe = 3;
+  string payload_json = 4; // JSON-encoded payload for flexibility
+}
+
+// BatchResponse contains results of all requests
+message BatchResponse {
+  repeated SubResponseProto responses = 1;
+  BatchSummary summary = 2;
+}
+
+// SubResponseProto represents the result of a single request
+message SubResponseProto {
+  string id = 1;
+  int32 status = 2;
+  string data_json = 3;     // JSON-encoded data
+  ErrorProto error = 4;
+  int64 duration_ms = 5;
+  string tenant_id = 6;
+}
+
+// ErrorProto represents an error
+message ErrorProto {
+  string code = 1;
+  string message = 2;
+}
+
+// BatchSummary provides aggregate statistics
+message BatchSummary {
+  int32 total = 1;
+  int32 successes = 2;
+  int32 failures = 3;
+}
+
+// SubResponse is used for streaming (same as SubResponseProto)
+message SubResponse {
+  string id = 1;
+  int32 status = 2;
+  string data_json = 3;
+  ErrorProto error = 4;
+  int64 duration_ms = 5;
+  string tenant_id = 6;
+}
