@@ -11,11 +11,14 @@ import (
 	"github.com/voseghale/batching"
 )
 
+const maxBatchSize = 1000
+
 func main() {
 	// Create orchestrator
 	orch := relayer.New(
 		relayer.WithTimeout(10 * time.Second),
-		relayer.WithMaxConcurrency(100), // Limit concurrent recipe executions
+		relayer.WithMaxConcurrency(100),       // Limit concurrent recipe executions
+		relayer.WithMaxBatchSize(maxBatchSize), // Use same limit as HTTP validation
 	)
 
 	// Register sample recipes
@@ -32,32 +35,57 @@ func main() {
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "healthy"}); err != nil {
+			log.Printf("Error encoding health response: %v", err)
+		}
 	})
 
-	// Start server
+	// Start server with explicit timeouts
 	addr := ":8080"
+	server := &http.Server{
+		Addr:           addr,
+		Handler:        mux,
+		ReadTimeout:    15 * time.Second,  // Prevent slow read attacks
+		WriteTimeout:   15 * time.Second,  // Prevent slow write attacks
+		IdleTimeout:    60 * time.Second,  // Connection reuse timeout
+		MaxHeaderBytes: 1 << 20,           // 1 MB max header size
+	}
+
 	log.Printf("Starting HTTP server on %s", addr)
 	log.Printf("Try: curl -X POST http://localhost:8080/batch -H 'Content-Type: application/json' -d @sample.json")
 	log.Printf("Sample payload in sample.json (you can create this file):")
 	printSampleJSON()
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
 
 func handleBatch(w http.ResponseWriter, r *http.Request, orch *relayer.Orchestrator) {
+	// SECURITY NOTE: This is an example server for demonstration purposes.
+	// In production, you should add:
+	// - Authentication (API keys, JWT tokens, OAuth)
+	// - Rate limiting (per-IP or per-tenant)
+	// - Request validation (schema validation, input sanitization)
+	// - TLS/HTTPS (using server.ListenAndServeTLS)
+	// - Request ID tracking for observability
+	// - CORS configuration for web clients
+
 	// Only accept POST
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	// Limit request body size to prevent memory exhaustion
+	const maxBodySize = 1 << 20 // 1 MB
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+
 	// Parse request body
 	var batch []relayer.SubRequest
 	if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
+		log.Printf("JSON decode error: %v", err) // Log details internally only
 		return
 	}
 
@@ -67,8 +95,8 @@ func handleBatch(w http.ResponseWriter, r *http.Request, orch *relayer.Orchestra
 		return
 	}
 
-	if len(batch) > 1000 {
-		http.Error(w, "Batch too large (max 1000)", http.StatusBadRequest)
+	if len(batch) > maxBatchSize {
+		http.Error(w, fmt.Sprintf("Batch too large (max %d)", maxBatchSize), http.StatusBadRequest)
 		return
 	}
 
@@ -79,14 +107,16 @@ func handleBatch(w http.ResponseWriter, r *http.Request, orch *relayer.Orchestra
 	// Return results
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"results": results,
 		"summary": map[string]interface{}{
 			"total":     len(results),
 			"successes": len(relayer.FilterSuccess(results)),
 			"failures":  len(results) - len(relayer.FilterSuccess(results)),
 		},
-	})
+	}); err != nil {
+		log.Printf("Error encoding response: %v", err)
+	}
 
 	log.Printf("Processed batch: %d requests, %d successes",
 		len(results), len(relayer.FilterSuccess(results)))

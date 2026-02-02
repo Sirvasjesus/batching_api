@@ -89,7 +89,7 @@ func FilterSuccess(responses []Response) []Response {
 //
 //	notFound := relayer.FilterByStatus(responses, 404)
 func FilterByStatus(responses []Response, status int) []Response {
-	filtered := make([]Response, 0)
+	filtered := make([]Response, 0, len(responses))
 	for _, resp := range responses {
 		if resp.Status == status {
 			filtered = append(filtered, resp)
@@ -105,7 +105,7 @@ func FilterByStatus(responses []Response, status int) []Response {
 //
 //	tenantResults := relayer.FilterByTenant(responses, "tenant-123")
 func FilterByTenant(responses []Response, tenantID string) []Response {
-	filtered := make([]Response, 0)
+	filtered := make([]Response, 0, len(responses))
 	for _, resp := range responses {
 		if resp.TenantID == tenantID {
 			filtered = append(filtered, resp)
